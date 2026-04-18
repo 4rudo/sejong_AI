@@ -26,21 +26,36 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _ENV_PATH = _REPO_ROOT / ".env"
 load_dotenv(dotenv_path=_ENV_PATH)
 
-_LOG_DIR = _REPO_ROOT / "logs"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+def _resolve_log_dir() -> Path:
+    """로컬은 리포 logs/, Streamlit Cloud 등 읽기 전용 FS는 temp 하위로 파일 로그를 둔다."""
+    preferred = _REPO_ROOT / "logs"
+    try:
+        preferred.mkdir(parents=True, exist_ok=True)
+        return preferred
+    except (PermissionError, OSError):
+        fallback = Path(tempfile.gettempdir()) / "multi_session_rag_logs"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+
+_LOG_DIR = _resolve_log_dir()
 _LOG_FILE = _LOG_DIR / f"multi_session_rag_{datetime.now().strftime('%Y%m%d')}.log"
 
 _LOGGER = logging.getLogger("multi_session_rag")
 _LOGGER.setLevel(logging.WARNING)
 _LOGGER.propagate = False
 if not _LOGGER.handlers:
-    _fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
-    _fh.setLevel(logging.WARNING)
-    _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    try:
+        _fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+        _fh.setLevel(logging.WARNING)
+        _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        _LOGGER.addHandler(_fh)
+    except (PermissionError, OSError):
+        pass
     _ch = logging.StreamHandler()
     _ch.setLevel(logging.WARNING)
     _ch.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
-    _LOGGER.addHandler(_fh)
     _LOGGER.addHandler(_ch)
 
 for _name in ("httpx", "httpcore", "urllib3", "openai", "langchain", "langchain_openai"):
